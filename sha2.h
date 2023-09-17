@@ -1,35 +1,40 @@
 #pragma once
+
 #include <string>
 #include <stdio.h>
 #include <iostream>
 #include <iomanip>
 #include <cstdint>
 #include <sstream>
-//Define _SHA_(The number of the hash algorithm you want to use)
-//example: _SHA_256
 
-#ifdef _SHA_256
-
-// define fixed size integer types
+//Macro for SHA384 and SHA512
+#define Ch(x, y, z) ((x & y) ^ (~x & z))
+#define Maj(x, y, z) ((x & y) ^ (x & z) ^ (y & z))
+#define RotR(x, n) ((x >> n) | (x << ((sizeof(x) << 3) - n)))
+#define Sig0(x) ((RotR(x, 28)) ^ (RotR(x,34)) ^  (RotR(x, 39)))
+#define Sig1(x) ((RotR(x, 14)) ^ (RotR(x,18)) ^ (RotR(x, 41)))
+#define sig0(x) (RotR(x, 1) ^ RotR(x, 8) ^ (x >> 7))
+#define sig1(x) (RotR(x, 19) ^ RotR(x, 61) ^ (x >> 6))
 
 typedef unsigned __int8  uint8_t;
 typedef unsigned __int32 uint32_t;
 typedef unsigned __int64 uint64_t;
+typedef unsigned long long uint64;
+
+#ifndef _SHA_256
+#define _SHA_256
 
 
-class SHA256 //: public Hash
+class SHA256
 {
 public:
     /// split into 64 byte blocks (=> 512 bits), hash is 32 bytes long
     enum { BlockSize = 512 / 8, HashBytes = 32 };
 
-    /// same as reset()
+    /// Create hash as well as reset()
     SHA256();
-
-    /// compute SHA256 of a memory block
-    std::string operator()(const void* data, size_t numBytes);
-    /// compute SHA256 of a string, excluding final zero
-    std::string operator()(const std::string& text);
+    SHA256(const std::string text);
+    SHA256(const void* data, size_t numBytes);
 
     /// add arbitrary number of bytes
     void add(const void* data, size_t numBytes);
@@ -37,7 +42,7 @@ public:
     /// return latest hash as 64 hex characters
     std::string getHash();
     /// return latest hash as bytes
-    void        getHash(unsigned char buffer[HashBytes]);
+    void getHash(unsigned char buffer[HashBytes]);
 
     /// restart
     void reset();
@@ -65,6 +70,15 @@ SHA256::SHA256()
     reset();
 }
 
+SHA256::SHA256(const std::string text) {
+    reset();
+    add(text.c_str(), text.size());
+}
+
+SHA256::SHA256(const void* data, size_t numBytes) {
+    reset();
+    add(data, numBytes);
+}
 
 /// restart
 void SHA256::reset()
@@ -99,15 +113,12 @@ void SHA256::reset()
 }
 
 
-namespace
-{
-    inline uint32_t rotate(uint32_t a, uint32_t c)
-    {
+namespace {
+    inline uint32_t rotate(uint32_t a, uint32_t c) {
         return (a >> c) | (a << (32 - c));
     }
 
-    inline uint32_t swap(uint32_t x)
-    {
+    inline uint32_t swap(uint32_t x) {
 #if defined(__GNUC__) || defined(__clang__)
         return __builtin_bswap32(x);
 #endif
@@ -115,32 +126,26 @@ namespace
         return _byteswap_ulong(x);
 #endif
 
-        return (x >> 24) |
-            ((x >> 8) & 0x0000FF00) |
-            ((x << 8) & 0x00FF0000) |
-            (x << 24);
+        return (x >> 24) | ((x >> 8) & 0x0000FF00) | ((x << 8) & 0x00FF0000) | (x << 24);
     }
 
     // mix functions for processBlock()
-    inline uint32_t f1(uint32_t e, uint32_t f, uint32_t g)
-    {
+    inline uint32_t f1(uint32_t e, uint32_t f, uint32_t g) {
         uint32_t term1 = rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25);
-        uint32_t term2 = (e & f) ^ (~e & g); //(g ^ (e & (f ^ g)))
+        uint32_t term2 = (e & f) ^ (~e & g);
         return term1 + term2;
     }
 
-    inline uint32_t f2(uint32_t a, uint32_t b, uint32_t c)
-    {
+    inline uint32_t f2(uint32_t a, uint32_t b, uint32_t c) {
         uint32_t term1 = rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22);
-        uint32_t term2 = ((a | b) & c) | (a & b); //(a & (b ^ c)) ^ (b & c);
+        uint32_t term2 = ((a | b) & c) | (a & b); 
         return term1 + term2;
     }
 }
 
 
 /// process 64 bytes
-void SHA256::processBlock(const void* data)
-{
+void SHA256::processBlock(const void* data) {
     // get last hash
     uint32_t a = m_hash[0];
     uint32_t b = m_hash[1];
@@ -156,12 +161,13 @@ void SHA256::processBlock(const void* data)
     // convert to big endian
     uint32_t words[64];
     int i;
-    for (i = 0; i < 16; i++)
-#if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
-        words[i] = input[i];
-#else
-        words[i] = swap(input[i]);
-#endif
+    for (i = 0; i < 16; i++) {
+        #if defined(__BYTE_ORDER) && (__BYTE_ORDER != 0) && (__BYTE_ORDER == __BIG_ENDIAN)
+            words[i] = input[i];
+        #else
+            words[i] = swap(input[i]);
+        #endif
+    }
 
     uint32_t x, y; // temporaries
 
@@ -175,7 +181,7 @@ void SHA256::processBlock(const void* data)
     x = b + f1(g, h, a) + 0x923f82a4 + words[6]; y = f2(c, d, e); f += x; b = x + y;
     x = a + f1(f, g, h) + 0xab1c5ed5 + words[7]; y = f2(b, c, d); e += x; a = x + y;
 
-    // secound round
+    // second round
     x = h + f1(e, f, g) + 0xd807aa98 + words[8]; y = f2(a, b, c); d += x; h = x + y;
     x = g + f1(d, e, f) + 0x12835b01 + words[9]; y = f2(h, a, b); c += x; g = x + y;
     x = f + f1(c, d, e) + 0x243185be + words[10]; y = f2(g, h, a); b += x; f = x + y;
@@ -186,12 +192,13 @@ void SHA256::processBlock(const void* data)
     x = a + f1(f, g, h) + 0xc19bf174 + words[15]; y = f2(b, c, d); e += x; a = x + y;
 
     // extend to 24 words
-    for (; i < 24; i++)
+    for (; i < 24; i++) {
         words[i] = words[i - 16] +
-        (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
-        words[i - 7] +
-        (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
-
+            (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
+            words[i - 7] +
+            (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
+    }
+       
     // third round
     x = h + f1(e, f, g) + 0xe49b69c1 + words[16]; y = f2(a, b, c); d += x; h = x + y;
     x = g + f1(d, e, f) + 0xefbe4786 + words[17]; y = f2(h, a, b); c += x; g = x + y;
@@ -203,12 +210,13 @@ void SHA256::processBlock(const void* data)
     x = a + f1(f, g, h) + 0x76f988da + words[23]; y = f2(b, c, d); e += x; a = x + y;
 
     // extend to 32 words
-    for (; i < 32; i++)
+    for (; i < 32; i++) {
         words[i] = words[i - 16] +
-        (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
-        words[i - 7] +
-        (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
-
+            (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
+            words[i - 7] +
+            (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
+    }
+        
     // fourth round
     x = h + f1(e, f, g) + 0x983e5152 + words[24]; y = f2(a, b, c); d += x; h = x + y;
     x = g + f1(d, e, f) + 0xa831c66d + words[25]; y = f2(h, a, b); c += x; g = x + y;
@@ -220,12 +228,13 @@ void SHA256::processBlock(const void* data)
     x = a + f1(f, g, h) + 0x14292967 + words[31]; y = f2(b, c, d); e += x; a = x + y;
 
     // extend to 40 words
-    for (; i < 40; i++)
+    for (; i < 40; i++) {
         words[i] = words[i - 16] +
-        (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
-        words[i - 7] +
-        (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
-
+            (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
+            words[i - 7] +
+            (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
+    }
+        
     // fifth round
     x = h + f1(e, f, g) + 0x27b70a85 + words[32]; y = f2(a, b, c); d += x; h = x + y;
     x = g + f1(d, e, f) + 0x2e1b2138 + words[33]; y = f2(h, a, b); c += x; g = x + y;
@@ -237,12 +246,13 @@ void SHA256::processBlock(const void* data)
     x = a + f1(f, g, h) + 0x92722c85 + words[39]; y = f2(b, c, d); e += x; a = x + y;
 
     // extend to 48 words
-    for (; i < 48; i++)
+    for (; i < 48; i++) {
         words[i] = words[i - 16] +
-        (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
-        words[i - 7] +
-        (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
-
+            (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
+            words[i - 7] +
+            (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
+    }
+        
     // sixth round
     x = h + f1(e, f, g) + 0xa2bfe8a1 + words[40]; y = f2(a, b, c); d += x; h = x + y;
     x = g + f1(d, e, f) + 0xa81a664b + words[41]; y = f2(h, a, b); c += x; g = x + y;
@@ -254,12 +264,13 @@ void SHA256::processBlock(const void* data)
     x = a + f1(f, g, h) + 0x106aa070 + words[47]; y = f2(b, c, d); e += x; a = x + y;
 
     // extend to 56 words
-    for (; i < 56; i++)
+    for (; i < 56; i++) {
         words[i] = words[i - 16] +
-        (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
-        words[i - 7] +
-        (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
-
+            (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
+            words[i - 7] +
+            (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
+    }
+        
     // seventh round
     x = h + f1(e, f, g) + 0x19a4c116 + words[48]; y = f2(a, b, c); d += x; h = x + y;
     x = g + f1(d, e, f) + 0x1e376c08 + words[49]; y = f2(h, a, b); c += x; g = x + y;
@@ -271,13 +282,14 @@ void SHA256::processBlock(const void* data)
     x = a + f1(f, g, h) + 0x682e6ff3 + words[55]; y = f2(b, c, d); e += x; a = x + y;
 
     // extend to 64 words
-    for (; i < 64; i++)
+    for (; i < 64; i++) {
         words[i] = words[i - 16] +
-        (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
-        words[i - 7] +
-        (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
-
-    // eigth round
+            (rotate(words[i - 15], 7) ^ rotate(words[i - 15], 18) ^ (words[i - 15] >> 3)) +
+            words[i - 7] +
+            (rotate(words[i - 2], 17) ^ rotate(words[i - 2], 19) ^ (words[i - 2] >> 10));
+    }
+        
+    // eight round
     x = h + f1(e, f, g) + 0x748f82ee + words[56]; y = f2(a, b, c); d += x; h = x + y;
     x = g + f1(d, e, f) + 0x78a5636f + words[57]; y = f2(h, a, b); c += x; g = x + y;
     x = f + f1(c, d, e) + 0x84c87814 + words[58]; y = f2(g, h, a); b += x; f = x + y;
@@ -300,34 +312,30 @@ void SHA256::processBlock(const void* data)
 
 
 /// add arbitrary number of bytes
-void SHA256::add(const void* data, size_t numBytes)
-{
+void SHA256::add(const void* data, size_t numBytes) {
     const uint8_t* current = (const uint8_t*)data;
 
-    if (m_bufferSize > 0)
-    {
-        while (numBytes > 0 && m_bufferSize < BlockSize)
-        {
+    if (m_bufferSize > 0) {
+        while (numBytes > 0 && m_bufferSize < BlockSize) {
             m_buffer[m_bufferSize++] = *current++;
             numBytes--;
         }
     }
 
     // full buffer
-    if (m_bufferSize == BlockSize)
-    {
+    if (m_bufferSize == BlockSize) {
         processBlock(m_buffer);
         m_numBytes += BlockSize;
         m_bufferSize = 0;
     }
 
     // no more data ?
-    if (numBytes == 0)
+    if (numBytes == 0) {
         return;
-
+    }
+       
     // process full blocks
-    while (numBytes >= BlockSize)
-    {
+    while (numBytes >= BlockSize) {
         processBlock(current);
         current += BlockSize;
         m_numBytes += BlockSize;
@@ -335,8 +343,7 @@ void SHA256::add(const void* data, size_t numBytes)
     }
 
     // keep remaining bytes in buffer
-    while (numBytes > 0)
-    {
+    while (numBytes > 0) {
         this->m_buffer[m_bufferSize++] = *current++;
         numBytes--;
     }
@@ -344,8 +351,7 @@ void SHA256::add(const void* data, size_t numBytes)
 
 
 /// process final block, less than 64 bytes
-void SHA256::processBuffer()
-{
+void SHA256::processBuffer() {
     // the input bytes are considered as bits strings, where the first bit is the most significant bit of the byte
 
     // - append "1" bit to message
@@ -360,10 +366,14 @@ void SHA256::processBuffer()
 
     // number of bits must be (numBits % 512) = 448
     size_t lower11Bits = paddedLength & 511;
-    if (lower11Bits <= 448)
+
+    if (lower11Bits <= 448) {
         paddedLength += 448 - lower11Bits;
-    else
+    }
+    else {
         paddedLength += 512 + 448 - lower11Bits;
+    }
+
     // convert from bits to bytes
     paddedLength /= 8;
 
@@ -371,26 +381,35 @@ void SHA256::processBuffer()
     unsigned char extra[BlockSize];
 
     // append a "1" bit, 128 => binary 10000000
-    if (m_bufferSize < BlockSize)
+    if (m_bufferSize < BlockSize) {
         m_buffer[m_bufferSize] = 128;
-    else
+    }
+    else {
         extra[0] = 128;
-
+    }
+    
     size_t i;
-    for (i = m_bufferSize + 1; i < BlockSize; i++)
+    for (i = m_bufferSize + 1; i < BlockSize; i++) {
         m_buffer[i] = 0;
-    for (; i < paddedLength; i++)
+    }
+        
+    for (; i < paddedLength; i++) {
         extra[i - BlockSize] = 0;
-
+    }
+    
     // add message length in bits as 64 bit number
     uint64_t msgBits = 8 * (m_numBytes + m_bufferSize);
+
     // find right position
     unsigned char* addLength;
-    if (paddedLength < BlockSize)
-        addLength = m_buffer + paddedLength;
-    else
-        addLength = extra + paddedLength - BlockSize;
 
+    if (paddedLength < BlockSize) {
+        addLength = m_buffer + paddedLength;
+    }
+    else {
+        addLength = extra + paddedLength - BlockSize;
+    }
+        
     // must be big endian
     *addLength++ = (unsigned char)((msgBits >> 56) & 0xFF);
     *addLength++ = (unsigned char)((msgBits >> 48) & 0xFF);
@@ -404,14 +423,14 @@ void SHA256::processBuffer()
     // process blocks
     processBlock(m_buffer);
     // flowed over into a second block ?
-    if (paddedLength > BlockSize)
+    if (paddedLength > BlockSize) {
         processBlock(extra);
+    }
+        
 }
 
-
 /// return latest hash as 64 hex characters
-std::string SHA256::getHash()
-{
+std::string SHA256::getHash() {
     // compute hash (as raw bytes)
     unsigned char rawHash[HashBytes];
     getHash(rawHash);
@@ -419,9 +438,8 @@ std::string SHA256::getHash()
     // convert to hex string
     std::string result;
     result.reserve(2 * HashBytes);
-    for (int i = 0; i < HashBytes; i++)
-    {
-        static const char dec2hex[16 + 1] = "0123456789abcdef";
+    for (int i = 0; i < HashBytes; i++) {
+        static const char dec2hex[17] = "0123456789abcdef";
         result += dec2hex[(rawHash[i] >> 4) & 15];
         result += dec2hex[rawHash[i] & 15];
     }
@@ -429,21 +447,19 @@ std::string SHA256::getHash()
     return result;
 }
 
-
 /// return latest hash as bytes
-void SHA256::getHash(unsigned char buffer[SHA256::HashBytes])
-{
+void SHA256::getHash(unsigned char buffer[SHA256::HashBytes]) {
     // save old hash if buffer is partially filled
     uint32_t oldHash[HashValues];
-    for (int i = 0; i < HashValues; i++)
+    for (int i = 0; i < HashValues; i++) {
         oldHash[i] = m_hash[i];
-
+    }
+        
     // process remaining bytes
     processBuffer();
 
     unsigned char* current = buffer;
-    for (int i = 0; i < HashValues; i++)
-    {
+    for (int i = 0; i < HashValues; i++) {
         *current++ = (m_hash[i] >> 24) & 0xFF;
         *current++ = (m_hash[i] >> 16) & 0xFF;
         *current++ = (m_hash[i] >> 8) & 0xFF;
@@ -454,31 +470,10 @@ void SHA256::getHash(unsigned char buffer[SHA256::HashBytes])
     }
 }
 
-
-/// compute SHA256 of a memory block
-std::string SHA256::operator()(const void* data, size_t numBytes)
-{
-    reset();
-    add(data, numBytes);
-    return getHash();
-}
-
-
-/// compute SHA256 of a string, excluding final zero
-std::string SHA256::operator()(const std::string& text)
-{
-    reset();
-    add(text.c_str(), text.size());
-    return getHash();
-}
-
 #endif // _SHA_256
 
-#ifdef _SHA_384
-
-
-
-typedef unsigned long long uint64;
+#ifndef _SHA_384
+#define _SHA_384
 
 class SHA384 {
 private:
@@ -517,13 +512,6 @@ private:
     void freeBuffer(uint64** buffer, size_t nBuffer);
 
     // Operations
-#define Ch(x,y,z) ((x&y)^(~x&z))
-#define Maj(x,y,z) ((x&y)^(x&z)^(y&z))
-#define RotR(x, n) ((x>>n)|(x<<((sizeof(x)<<3)-n)))
-#define Sig0(x) ((RotR(x, 28))^(RotR(x,34))^(RotR(x, 39)))
-#define Sig1(x) ((RotR(x, 14))^(RotR(x,18))^(RotR(x, 41)))
-#define sig0(x) (RotR(x, 1)^RotR(x,8)^(x>>7))
-#define sig1(x) (RotR(x, 19)^RotR(x,61)^(x>>6))
 
 // Constants
     unsigned int const SEQUENCE_LEN = (1024 / 64);
@@ -697,11 +685,8 @@ void SHA384::freeBuffer(uint64** buffer, size_t nBuffer) {
 
 #endif // 
 
-#ifdef _SHA_512
-
-
-typedef unsigned long long uint64;
-
+#ifndef _SHA_512
+#define _SHA_512
 
 class SHA512 {
 private:
@@ -740,13 +725,6 @@ private:
     void freeBuffer(uint64** buffer, size_t nBuffer);
 
     // Operations
-#define Ch(x,y,z) ((x&y)^(~x&z))
-#define Maj(x,y,z) ((x&y)^(x&z)^(y&z))
-#define RotR(x, n) ((x>>n)|(x<<((sizeof(x)<<3)-n)))
-#define Sig0(x) ((RotR(x, 28))^(RotR(x,34))^(RotR(x, 39)))
-#define Sig1(x) ((RotR(x, 14))^(RotR(x,18))^(RotR(x, 41)))
-#define sig0(x) (RotR(x, 1)^RotR(x,8)^(x>>7))
-#define sig1(x) (RotR(x, 19)^RotR(x,61)^(x>>6))
 
 // Constants
     unsigned int const SEQUENCE_LEN = (1024 / 64);
